@@ -41,11 +41,14 @@ jobs:
 
       - name: Escaneo de vulnerabilidades de contenedor con Docker Scout
         uses: docker/scout-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           command: cves
           image: ${{ secrets.DOCKERHUB_USERNAME }}/autoparts-app:${{ github.sha }}
           only-severities: critical
           exit-code: true
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Exportar imagen verificada para despliegue
         run: |

@@ -11,7 +11,7 @@ on:
 permissions:
   contents: read
   security-events: write
-  pull-requests: read
+  pull-requests: write
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -108,7 +108,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
           snyk code test --severity-threshold=high
-          
+
       - name: Instalar dependencias de Python para análisis SCA
         run: |
           python -m pip install --upgrade pip

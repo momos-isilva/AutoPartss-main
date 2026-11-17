@@ -1,0 +1,144 @@
+name: CI/CD & DevSecOps Pipeline - AutoPartss
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # JOB 1: Construcción de imagen Docker, Pruebas Unitarias y Docker Scout
+  # ---------------------------------------------------------------------------
+  build-and-test:
+    name: Build Docker, Unit Tests & Docker Scout
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del código fuente
+        uses: actions/checkout@v4
+
+      - name: Iniciar sesión en Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Construir imagen Docker de AutoPartss
+        run: |
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/autoparts-app:${{ github.sha }} .
+
+      - name: Ejecutar pruebas unitarias dentro del contenedor
+        run: |
+          docker run --rm ${{ secrets.DOCKERHUB_USERNAME }}/autoparts-app:${{ github.sha }} python manage.py test
+
+      - name: Escaneo de vulnerabilidades de contenedor con Docker Scout
+        uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: ${{ secrets.DOCKERHUB_USERNAME }}/autoparts-app:${{ github.sha }}
+          only-severities: critical
+          exit-code: true
+
+      - name: Exportar imagen verificada para despliegue
+        run: |
+          docker save ${{ secrets.DOCKERHUB_USERNAME }}/autoparts-app:${{ github.sha }} -o autoparts-image.tar
+
+      - name: Subir artefacto de imagen Docker
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: autoparts-image.tar
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # JOB 2: Análisis Estático (SonarCloud, Snyk) y GitHub Advanced Security
+  # ---------------------------------------------------------------------------
+  security-and-quality:
+    name: SAST, SCA & GitHub Advanced Security
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del código fuente
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: GHAS - Revisión de dependencias en Pull Request
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: critical
+
+      - name: GHAS - Inicializar análisis CodeQL (Python)
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+
+      - name: GHAS - Ejecutar análisis de seguridad y secretos CodeQL
+        uses: github/codeql-action/analyze@v3
+
+      - name: Análisis estático y Quality Gate en SonarCloud
+        uses: SonarSource/sonarqube-scan-action@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=momos-isilva_AutoPartss-main
+            -Dsonar.organization=momos-isilva
+            -Dsonar.sources=.
+            -Dsonar.exclusions=**/migrations/**,**/staticfiles/**,**/media/**
+            -Dsonar.qualitygate.wait=true
+
+      - name: Configurar Snyk CLI
+        uses: snyk/actions/setup@master
+
+      - name: Snyk - Análisis estático de código (SAST)
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          snyk code test --severity-threshold=critical
+
+      - name: Snyk - Análisis de seguridad en dependencias (SCA)
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          snyk test --file=requirements.txt --severity-threshold=critical
+
+  # ---------------------------------------------------------------------------
+  # JOB 3: Despliegue en Docker Hub (Bloqueado si fallan pruebas o seguridad)
+  # ---------------------------------------------------------------------------
+  deploy-dockerhub:
+    name: Push Image to Docker Hub
+    needs: [build-and-test, security-and-quality]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar imagen Docker verificada
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+
+      - name: Cargar imagen en el demonio local de Docker
+        run: |
+          docker load -i autoparts-image.tar
+
+      - name: Iniciar sesión en Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Publicar imagen en Docker Hub
+        run: |
+          docker tag ${{ secrets.DOCKERHUB_USERNAME }}/autoparts-app:${{ github.sha }} ${{ secrets.DOCKERHUB_USERNAME }}/autoparts-app:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/autoparts-app:${{ github.sha }}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/autoparts-app:latest

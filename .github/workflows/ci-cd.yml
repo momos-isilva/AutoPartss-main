@@ -100,6 +100,8 @@ jobs:
             -Dsonar.organization=momos-isilva
             -Dsonar.sources=.
             -Dsonar.exclusions=**/migrations/**,**/staticfiles/**,**/media/**,.github/**
+            -Dsonar.coverage.exclusions=**/tests.py
+            -Dsonar.python.coverage.reportPaths=backend/coverage.xml
             -Dsonar.qualitygate.wait=true
 
       - name: Configurar Snyk CLI
@@ -117,6 +119,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Generar reporte de cobertura para SonarCloud
+        if: github.event_name == 'pull_request'
+        working-directory: backend
+        run: |
+          pip install coverage
+          coverage run manage.py test
+          coverage xml
+          
       - name: Snyk - Análisis de seguridad en dependencias (SCA)
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

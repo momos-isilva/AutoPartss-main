@@ -86,6 +86,7 @@ jobs:
         uses: github/codeql-action/analyze@v3
 
       - name: Análisis estático y Quality Gate en SonarCloud
+        if: github.event_name == 'pull_request'
         uses: SonarSource/sonarqube-scan-action@v4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

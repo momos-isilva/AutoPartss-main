@@ -96,7 +96,7 @@ jobs:
             -Dsonar.projectKey=momos-isilva_AutoPartss-main
             -Dsonar.organization=momos-isilva
             -Dsonar.sources=.
-            -Dsonar.exclusions=**/migrations/**,**/staticfiles/**,**/media/**
+            -Dsonar.exclusions=**/migrations/**,**/staticfiles/**,**/media/**,.github/**
             -Dsonar.qualitygate.wait=true
 
       - name: Configurar Snyk CLI
